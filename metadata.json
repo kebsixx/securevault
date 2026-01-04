@@ -1,0 +1,5 @@
+{
+  "name": "SecureVault",
+  "description": "A secure, session-based password manager with file-level encryption for exports.",
+  "requestFramePermissions": []
+}
