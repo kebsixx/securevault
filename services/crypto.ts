@@ -163,3 +163,84 @@ function base64ToBuffer(base64: string): Uint8Array {
   }
   return bytes;
 }
+
+// URL Validation
+export const isValidURL = (urlString: string): boolean => {
+  if (!urlString) return true; // Optional field
+  try {
+    new URL(urlString);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+// File Size Validation (in MB)
+export const validateFileSize = (
+  file: File,
+  maxSizeMB: number = 5
+): boolean => {
+  const maxSizeBytes = maxSizeMB * 1024 * 1024;
+  return file.size <= maxSizeBytes;
+};
+
+// Get file size in MB
+export const getFileSizeMB = (file: File): number => {
+  return file.size / (1024 * 1024);
+};
+
+// Password Generator
+interface PasswordGeneratorOptions {
+  length: number;
+  useUppercase: boolean;
+  useLowercase: boolean;
+  useNumbers: boolean;
+  useSymbols: boolean;
+}
+
+export const generatePassword = (options: PasswordGeneratorOptions): string => {
+  const uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const lowercase = "abcdefghijklmnopqrstuvwxyz";
+  const numbers = "0123456789";
+  const symbols = "!@#$%^&*_+-=()[]{}|;:,.<>?";
+
+  let chars = "";
+  if (options.useUppercase) chars += uppercase;
+  if (options.useLowercase) chars += lowercase;
+  if (options.useNumbers) chars += numbers;
+  if (options.useSymbols) chars += symbols;
+
+  // If no character types selected, use default
+  if (chars === "") {
+    chars = uppercase + lowercase + numbers;
+  }
+
+  let password = "";
+  const charArray = new Uint8Array(options.length);
+  window.crypto.getRandomValues(charArray);
+
+  for (let i = 0; i < options.length; i++) {
+    password += chars[charArray[i] % chars.length];
+  }
+
+  // Ensure at least one character from each enabled type
+  const ensureCharacters = [];
+  if (options.useUppercase) ensureCharacters.push(uppercase);
+  if (options.useLowercase) ensureCharacters.push(lowercase);
+  if (options.useNumbers) ensureCharacters.push(numbers);
+  if (options.useSymbols) ensureCharacters.push(symbols);
+
+  if (ensureCharacters.length > 0) {
+    const passwordArray = password.split("");
+    ensureCharacters.forEach((charSet, index) => {
+      const randomIndex = Math.floor(Math.random() * passwordArray.length);
+      const randomChar = charSet[Math.floor(Math.random() * charSet.length)];
+      passwordArray[randomIndex] = randomChar;
+    });
+    password = passwordArray.join("");
+  }
+
+  return password;
+};
+
+export type { PasswordGeneratorOptions };

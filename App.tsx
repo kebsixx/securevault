@@ -6,6 +6,9 @@ import {
   generateId,
   evaluatePasswordStrength,
   validateEncryptedExport,
+  isValidURL,
+  validateFileSize,
+  getFileSizeMB,
 } from "./services/crypto";
 import { Modal } from "./components/Common";
 import {
@@ -80,6 +83,13 @@ export default function App() {
     Record<string, boolean>
   >({});
 
+  // Session Timeout State
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const [showTimeoutWarning, setShowTimeoutWarning] = useState(false);
+
+  // Clipboard timeout tracking
+  const clipboardTimeoutRef = React.useRef<Record<string, NodeJS.Timeout>>({});
+
   // 1. Warning on Tab Close/Reload (Data is volatile)
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -97,20 +107,125 @@ export default function App() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [passwords]);
 
+  // 2. Session Timeout (30 minutes idle)
+  useEffect(() => {
+    if (sessionExpired) return;
+
+    const IDLE_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+    const WARNING_TIME = 5 * 60 * 1000; // 5 minutes before timeout
+    let timeoutId: NodeJS.Timeout;
+    let warningTimeoutId: NodeJS.Timeout;
+
+    const resetTimeout = () => {
+      clearTimeout(timeoutId);
+      clearTimeout(warningTimeoutId);
+
+      // Show warning 5 minutes before timeout
+      warningTimeoutId = setTimeout(() => {
+        if (passwords.length > 0) {
+          setShowTimeoutWarning(true);
+        }
+      }, IDLE_TIMEOUT - WARNING_TIME);
+
+      // Expire session after 30 minutes
+      timeoutId = setTimeout(() => {
+        setSessionExpired(true);
+        setPasswords([]);
+        showNotification("⏱️ Session expired due to inactivity.", "error");
+      }, IDLE_TIMEOUT);
+    };
+
+    // Track user activity
+    const events = ["mousedown", "keydown", "scroll", "touchstart"];
+    const handleActivity = () => {
+      setShowTimeoutWarning(false);
+      resetTimeout();
+    };
+
+    events.forEach((event) => {
+      window.addEventListener(event, handleActivity);
+    });
+
+    resetTimeout();
+
+    return () => {
+      clearTimeout(timeoutId);
+      clearTimeout(warningTimeoutId);
+      events.forEach((event) => {
+        window.removeEventListener(event, handleActivity);
+      });
+    };
+  }, [passwords, sessionExpired]);
+
   const handleAddPassword = () => {
     if (!formData.label || !formData.password) return;
 
+    // 1. Check for duplicate label
+    if (
+      passwords.some(
+        (p) => p.label.toLowerCase() === formData.label?.toLowerCase()
+      )
+    ) {
+      showNotification(
+        `⚠️ Password with label "${formData.label}" already exists!`,
+        "error"
+      );
+      return;
+    }
+
+    // 2. Check password strength
+    const strength = evaluatePasswordStrength(formData.password);
+    if (strength.score < 2) {
+      setConfirmDialog({
+        show: true,
+        title: "⚠️ Weak Password Warning",
+        message: `Password strength is "${strength.label}". Add weak password anyway?`,
+        onConfirm: () => {
+          addPasswordToSession();
+          setConfirmDialog({
+            show: false,
+            title: "",
+            message: "",
+            onConfirm: () => {},
+          });
+        },
+      });
+      return;
+    }
+
+    // 3. Check URL validity
+    if (formData.url && !isValidURL(formData.url)) {
+      setConfirmDialog({
+        show: true,
+        title: "⚠️ Invalid URL",
+        message: `URL "${formData.url}" appears to be invalid. Add anyway?`,
+        onConfirm: () => {
+          addPasswordToSession();
+          setConfirmDialog({
+            show: false,
+            title: "",
+            message: "",
+            onConfirm: () => {},
+          });
+        },
+      });
+      return;
+    }
+
+    addPasswordToSession();
+  };
+
+  const addPasswordToSession = () => {
     const newEntry: PasswordEntry = {
       id: generateId(),
-      label: formData.label,
+      label: formData.label || "",
       username: formData.username || "",
-      password: formData.password,
+      password: formData.password || "",
       url: formData.url || "",
       notes: formData.notes || "",
       createdAt: Date.now(),
     };
 
-    // Save only to Memory (State)
     setPasswords((prev) => [...prev, newEntry]);
     setFormData({});
     setIsAddOpen(false);
@@ -140,6 +255,14 @@ export default function App() {
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
+
+    // Auto-clear clipboard after 30 seconds
+    const timeoutId = setTimeout(() => {
+      navigator.clipboard.writeText("");
+    }, 30000);
+
+    // Store timeout to clean up if needed
+    clipboardTimeoutRef.current[text] = timeoutId;
   };
 
   const showNotification = (
@@ -221,6 +344,16 @@ export default function App() {
     if (!importFile) return;
     if (!filePassword) {
       setImportStatus("Please enter the decryption password.");
+      return;
+    }
+
+    // Check file size (max 5MB)
+    if (!validateFileSize(importFile, 5)) {
+      setImportStatus(
+        `❌ File too large. Maximum size is 5MB. Your file is ${getFileSizeMB(
+          importFile
+        ).toFixed(2)}MB.`
+      );
       return;
     }
 
@@ -317,6 +450,48 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Session Expired Redirect */}
+      {sessionExpired && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl border border-gray-100 p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-3">
+              ⏱️ Session Expired
+            </h2>
+            <p className="text-sm text-gray-600 mb-6">
+              Your session has expired due to 30 minutes of inactivity. All data
+              has been cleared for security.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium">
+              Refresh Page
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Session Timeout Warning */}
+      {showTimeoutWarning && !sessionExpired && (
+        <div className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl border border-gray-100 p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-3">
+              ⏰ Session Timeout Warning
+            </h2>
+            <p className="text-sm text-gray-600 mb-6">
+              You have been inactive for 25 minutes. Your session will expire in
+              5 minutes. Click anywhere or press any key to extend.
+            </p>
+            <button
+              onClick={() => {
+                setShowTimeoutWarning(false);
+              }}
+              className="w-full px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium">
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Success/Error Notification Toast */}
       {successNotif.show && (
         <div
@@ -598,34 +773,40 @@ export default function App() {
             <label className="text-xs font-semibold text-gray-500 uppercase">
               Password
             </label>
-            <div className="relative">
-              <input
-                type={showAddPassword ? "text" : "password"}
-                className="w-full mt-1 p-2 pr-20 border rounded-md focus:ring-2 focus:ring-indigo-500/50 outline-none"
-                placeholder="********"
-                value={formData.password || ""}
-                onChange={(e) =>
-                  setFormData({ ...formData, password: e.target.value })
-                }
-              />
-              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+            <div className="flex gap-2 mt-1">
+              <div className="relative flex-1">
+                <input
+                  type={showAddPassword ? "text" : "password"}
+                  className="w-full p-2 border rounded-md focus:ring-2 focus:ring-indigo-500/50 outline-none"
+                  placeholder="Enter or generate"
+                  value={formData.password || ""}
+                  onChange={(e) => {
+                    setFormData({ ...formData, password: e.target.value });
+                  }}
+                />
                 <button
                   onClick={() => setShowAddPassword(!showAddPassword)}
-                  className="text-gray-400 hover:text-gray-600 p-1">
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1">
                   {showAddPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-                <button
-                  onClick={() =>
-                    setFormData({
-                      ...formData,
-                      password: Math.random().toString(36).slice(-10) + "A1!",
-                    })
-                  }
-                  className="text-xs text-indigo-600 font-medium hover:underline ml-2">
-                  Gen
                 </button>
               </div>
             </div>
+            <p className="text-[10px] text-gray-400 mt-1">
+              Type your own or{" "}
+              <button
+                onClick={() => {
+                  const generated =
+                    Math.random().toString(36).slice(-10) + "A1!";
+                  setFormData({
+                    ...formData,
+                    password: generated,
+                  });
+                  setShowAddPassword(true);
+                }}
+                className="text-indigo-600 hover:underline font-medium">
+                generate strong password
+              </button>
+            </p>
           </div>
           <div>
             <label className="text-xs font-semibold text-gray-500 uppercase">
@@ -679,7 +860,9 @@ export default function App() {
                   value={filePassword}
                   onChange={(e) => {
                     setFilePassword(e.target.value);
-                    setPasswordStrength(evaluatePasswordStrength(e.target.value));
+                    setPasswordStrength(
+                      evaluatePasswordStrength(e.target.value)
+                    );
                   }}
                 />
                 <button
@@ -689,7 +872,18 @@ export default function App() {
                 </button>
               </div>
               <p className="text-[10px] text-gray-400 mt-1">
-                You will need this password to import the file later.
+                Save this password securely. or{" "}
+                <button
+                  onClick={() => {
+                    const generated =
+                      Math.random().toString(36).slice(-10) + "A1!";
+                    setFilePassword(generated);
+                    setPasswordStrength(evaluatePasswordStrength(generated));
+                    setShowFilePassword(true);
+                  }}
+                  className="text-indigo-600 hover:underline font-medium">
+                  generate a strong one
+                </button>
               </p>
 
               {/* Password Strength Indicator */}
