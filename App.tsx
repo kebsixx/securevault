@@ -5,7 +5,6 @@ import { Modal } from "./components/Common";
 import {
   Plus,
   Search,
-  LogOut,
   Download,
   Upload,
   Trash2,
@@ -302,21 +301,21 @@ export default function App() {
           </div>
           <div className="flex items-center gap-4">
             <div className="flex flex-col items-end">
-              <span className="text-[10px] text-red-500 font-medium bg-red-50 px-1.5 py-0.5 rounded uppercase">
-                Volatile Session
+              <span className="text-xs text-orange-600 font-semibold bg-orange-50 px-3 py-1.5 rounded-full">
+                🔄 Session Only
               </span>
+              <p className="text-[10px] text-gray-500 mt-1 font-medium">
+                Close tab to clear
+              </p>
             </div>
             <button
-              onClick={() => window.location.reload()}
-              className="p-2 text-gray-400 hover:text-red-600 transition-colors"
-              title="Reset Session">
-              <LogOut size={20} />
-            </button>
-            <button
               onClick={() => setIsTutorialOpen(true)}
-              className="p-2 text-gray-400 hover:text-indigo-600 transition-colors"
+              className="p-2 text-gray-400 hover:text-indigo-600 transition-colors group relative"
               title="Help & Tutorial">
               <HelpCircle size={20} />
+              <span className="absolute top-full left-1/2 -translate-x-1/2 mt-2 hidden group-hover:block bg-gray-900 text-white text-xs px-3 py-1 rounded whitespace-nowrap z-40">
+                Help
+              </span>
             </button>
           </div>
         </div>
