@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { PasswordEntry, EncryptedExport } from "./types";
-import { encryptData, decryptData, generateId } from "./services/crypto";
+import {
+  encryptData,
+  decryptData,
+  generateId,
+  evaluatePasswordStrength,
+  validateEncryptedExport,
+} from "./services/crypto";
 import { Modal } from "./components/Common";
 import {
   Plus,
@@ -45,9 +51,18 @@ export default function App() {
 
   // Add/Edit Form State
   const [formData, setFormData] = useState<Partial<PasswordEntry>>({});
+  const [showAddPassword, setShowAddPassword] = useState(false);
 
   // Import/Export Password State
   const [filePassword, setFilePassword] = useState("");
+  const [showFilePassword, setShowFilePassword] = useState(false);
+  const [showImportPassword, setShowImportPassword] = useState(false);
+  const [passwordStrength, setPasswordStrength] = useState({
+    score: 0,
+    label: "",
+    color: "",
+    feedback: [],
+  });
 
   // Import State
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -145,6 +160,30 @@ export default function App() {
       return;
     }
 
+    // Check password strength
+    const strength = evaluatePasswordStrength(filePassword);
+    if (strength.score < 2) {
+      setConfirmDialog({
+        show: true,
+        title: "⚠️ Weak Password Warning",
+        message: `Your password strength is "${strength.label}". Using a weak password reduces security. Continue anyway?`,
+        onConfirm: async () => {
+          await performExport();
+          setConfirmDialog({
+            show: false,
+            title: "",
+            message: "",
+            onConfirm: () => {},
+          });
+        },
+      });
+      return;
+    }
+
+    await performExport();
+  };
+
+  const performExport = async () => {
     try {
       const encrypted = await encryptData(
         JSON.stringify(passwords),
@@ -169,6 +208,8 @@ export default function App() {
 
       setIsExportOpen(false);
       setFilePassword("");
+      setPasswordStrength({ score: 0, label: "", color: "", feedback: [] });
+      showNotification("✅ Passwords exported successfully!");
     } catch (e) {
       console.error("Export failed", e);
       showNotification("Export encryption failed.", "error");
@@ -187,16 +228,52 @@ export default function App() {
     reader.onload = async (e) => {
       try {
         const content = e.target?.result as string;
-        const parsed: EncryptedExport = JSON.parse(content);
+        let parsed: unknown;
+
+        // Strict JSON parsing with validation
+        try {
+          parsed = JSON.parse(content);
+        } catch {
+          setImportStatus(
+            "❌ Invalid file format. The file must be valid JSON."
+          );
+          return;
+        }
+
+        // Validate structure
+        if (!validateEncryptedExport(parsed)) {
+          setImportStatus(
+            "❌ Invalid vault file format. File may be corrupted or not a SecureVault export."
+          );
+          return;
+        }
+
+        const encryptedExport = parsed as EncryptedExport;
 
         // Decrypt using the provided password
-        const decryptedJson = await decryptData(
-          parsed.data,
-          parsed.iv,
-          parsed.salt,
-          filePassword
-        );
-        const importedPasswords: PasswordEntry[] = JSON.parse(decryptedJson);
+        let decryptedJson: string;
+        try {
+          decryptedJson = await decryptData(
+            encryptedExport.data,
+            encryptedExport.iv,
+            encryptedExport.salt,
+            filePassword
+          );
+        } catch {
+          setImportStatus("❌ Incorrect password or file corrupted.");
+          return;
+        }
+
+        let importedPasswords: PasswordEntry[];
+        try {
+          importedPasswords = JSON.parse(decryptedJson);
+          // Validate imported data
+          if (!Array.isArray(importedPasswords))
+            throw new Error("Invalid password array");
+        } catch {
+          setImportStatus("❌ File contains invalid password data.");
+          return;
+        }
 
         setConfirmDialog({
           show: true,
@@ -226,7 +303,7 @@ export default function App() {
         });
       } catch (err) {
         console.error(err);
-        setImportStatus("Incorrect password or invalid file format.");
+        setImportStatus("❌ An unexpected error occurred during import.");
       }
     };
     reader.readAsText(importFile);
@@ -359,7 +436,10 @@ export default function App() {
               <Download size={16} /> Export
             </button>
             <button
-              onClick={() => setIsAddOpen(true)}
+              onClick={() => {
+                setIsAddOpen(true);
+                setShowAddPassword(false);
+              }}
               className="flex-1 sm:flex-none items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-md flex text-sm font-medium">
               <Plus size={18} /> Add New
             </button>
@@ -480,7 +560,11 @@ export default function App() {
       {/* Add Password Modal */}
       <Modal
         isOpen={isAddOpen}
-        onClose={() => setIsAddOpen(false)}
+        onClose={() => {
+          setIsAddOpen(false);
+          setFormData({});
+          setShowAddPassword(false);
+        }}
         title="Add Password">
         <div className="space-y-4">
           <div>
@@ -516,24 +600,31 @@ export default function App() {
             </label>
             <div className="relative">
               <input
-                type="password"
-                className="w-full mt-1 p-2 border rounded-md focus:ring-2 focus:ring-indigo-500/50 outline-none"
+                type={showAddPassword ? "text" : "password"}
+                className="w-full mt-1 p-2 pr-20 border rounded-md focus:ring-2 focus:ring-indigo-500/50 outline-none"
                 placeholder="********"
                 value={formData.password || ""}
                 onChange={(e) =>
                   setFormData({ ...formData, password: e.target.value })
                 }
               />
-              <button
-                onClick={() =>
-                  setFormData({
-                    ...formData,
-                    password: Math.random().toString(36).slice(-10) + "A1!",
-                  })
-                }
-                className="absolute right-2 top-1/2 mt-0.5 -translate-y-1/2 text-xs text-indigo-600 font-medium hover:underline">
-                Generate
-              </button>
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                <button
+                  onClick={() => setShowAddPassword(!showAddPassword)}
+                  className="text-gray-400 hover:text-gray-600 p-1">
+                  {showAddPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+                <button
+                  onClick={() =>
+                    setFormData({
+                      ...formData,
+                      password: Math.random().toString(36).slice(-10) + "A1!",
+                    })
+                  }
+                  className="text-xs text-indigo-600 font-medium hover:underline ml-2">
+                  Gen
+                </button>
+              </div>
             </div>
           </div>
           <div>
@@ -560,7 +651,11 @@ export default function App() {
       {/* Export Modal - Password Protected */}
       <Modal
         isOpen={isExportOpen}
-        onClose={() => setIsExportOpen(false)}
+        onClose={() => {
+          setIsExportOpen(false);
+          setFilePassword("");
+          setShowFilePassword(false);
+        }}
         title="Export Passwords">
         <div className="space-y-4">
           <div className="text-center py-2">
@@ -568,29 +663,83 @@ export default function App() {
               <FileKey size={32} />
             </div>
             <p className="text-gray-600 mb-4">
-              Protect your export file with a password.
+              Protect your export file with a strong password.
             </p>
 
             <div className="text-left mb-4">
               <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">
                 Encryption Password
               </label>
-              <input
-                type="password"
-                autoFocus
-                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500/50 outline-none bg-gray-50"
-                placeholder="Enter a strong password..."
-                value={filePassword}
-                onChange={(e) => setFilePassword(e.target.value)}
-              />
+              <div className="relative">
+                <input
+                  type={showFilePassword ? "text" : "password"}
+                  autoFocus
+                  className="w-full p-3 pr-10 border rounded-lg focus:ring-2 focus:ring-indigo-500/50 outline-none bg-gray-50"
+                  placeholder="Enter a strong password..."
+                  value={filePassword}
+                  onChange={(e) => {
+                    setFilePassword(e.target.value);
+                    setPasswordStrength(evaluatePasswordStrength(e.target.value));
+                  }}
+                />
+                <button
+                  onClick={() => setShowFilePassword(!showFilePassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  {showFilePassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
               <p className="text-[10px] text-gray-400 mt-1">
                 You will need this password to import the file later.
               </p>
+
+              {/* Password Strength Indicator */}
+              {filePassword && (
+                <div className="mt-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-semibold text-gray-600">
+                      Strength:
+                    </span>
+                    <span
+                      className={`text-xs font-bold ${
+                        passwordStrength.color === "bg-red-500"
+                          ? "text-red-600"
+                          : passwordStrength.color === "bg-orange-500"
+                          ? "text-orange-600"
+                          : passwordStrength.color === "bg-yellow-500"
+                          ? "text-yellow-600"
+                          : passwordStrength.color === "bg-blue-500"
+                          ? "text-blue-600"
+                          : "text-green-600"
+                      }`}>
+                      {passwordStrength.label}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                    <div
+                      className={`h-full ${passwordStrength.color} transition-all duration-300`}
+                      style={{
+                        width: `${(passwordStrength.score / 5) * 100}%`,
+                      }}
+                    />
+                  </div>
+                  {passwordStrength.feedback.length > 0 && (
+                    <div className="mt-2 text-xs text-gray-600">
+                      <p className="font-semibold mb-1">Suggestions:</p>
+                      <ul className="list-disc list-inside space-y-0.5">
+                        {passwordStrength.feedback.map((tip, i) => (
+                          <li key={i}>{tip}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <button
               onClick={handleExport}
-              className="w-full bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 font-medium flex items-center justify-center gap-2">
+              disabled={!filePassword}
+              className="w-full bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium flex items-center justify-center gap-2 transition">
               <Download size={18} />
               Encrypt & Download
             </button>
@@ -605,6 +754,7 @@ export default function App() {
           setIsImportOpen(false);
           setImportFile(null);
           setImportStatus("");
+          setShowImportPassword(false);
         }}
         title="Import Vault">
         <div className="space-y-4">
@@ -625,19 +775,31 @@ export default function App() {
             <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">
               Decryption Password
             </label>
-            <input
-              type="password"
-              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500/50 outline-none bg-gray-50"
-              placeholder="Enter the password for this file..."
-              value={filePassword}
-              onChange={(e) => setFilePassword(e.target.value)}
-            />
+            <div className="relative">
+              <input
+                type={showImportPassword ? "text" : "password"}
+                className="w-full p-3 pr-10 border rounded-lg focus:ring-2 focus:ring-indigo-500/50 outline-none bg-gray-50"
+                placeholder="Enter the password for this file..."
+                value={filePassword}
+                onChange={(e) => setFilePassword(e.target.value)}
+              />
+              <button
+                onClick={() => setShowImportPassword(!showImportPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                {showImportPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
           </div>
 
           {importStatus && (
-            <p className="text-red-500 text-sm bg-red-50 p-2 rounded text-center">
+            <div
+              className={`text-sm p-3 rounded-lg ${
+                importStatus.includes("❌")
+                  ? "bg-red-50 text-red-700 border border-red-200"
+                  : "bg-yellow-50 text-yellow-700 border border-yellow-200"
+              }`}>
               {importStatus}
-            </p>
+            </div>
           )}
 
           <button
@@ -748,6 +910,39 @@ export default function App() {
               Selalu backup sebelum menutup. Gunakan password ekspor yang kuat
               dan simpan di tempat aman.
             </p>
+          </div>
+
+          <div className="border-t pt-4">
+            <h3 className="font-bold text-red-600 mb-2">
+              🔐 Panduan Keamanan Penting
+            </h3>
+            <ul className="text-sm text-gray-700 space-y-2">
+              <li>
+                <strong>Password Ekspor Harus Kuat:</strong> Gunakan kombinasi
+                huruf besar, huruf kecil, angka, dan simbol (!@#$%^&*)
+              </li>
+              <li>
+                <strong>Simpan Password di Tempat Aman:</strong> Jangan taruh
+                password di file teks biasa. Gunakan password manager atau
+                catatan terenkripsi
+              </li>
+              <li>
+                <strong>Backup Berkala:</strong> Selalu ekspor data secara
+                berkala ke multiple lokasi
+              </li>
+              <li>
+                <strong>Hindari Perangkat Publik:</strong> Jangan gunakan
+                aplikasi ini di komputer publik atau internet cafe
+              </li>
+              <li>
+                <strong>Lock Browser/Komputer:</strong> Selalu kunci perangkat
+                saat meninggalkannya
+              </li>
+              <li>
+                <strong>Hati-hati File Ekspor:</strong> Jangan bagikan file
+                ekspor kepada orang yang tidak dipercaya
+              </li>
+            </ul>
           </div>
         </div>
       </Modal>

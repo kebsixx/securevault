@@ -8,7 +8,11 @@ const getPasswordKey = (password: string) =>
   ]);
 
 // Fix: Relax keyUsage type to allow single usage arrays like ["encrypt"] or ["decrypt"]
-const deriveKey = (passwordKey: CryptoKey, salt: Uint8Array, keyUsage: ("encrypt" | "decrypt")[]) =>
+const deriveKey = (
+  passwordKey: CryptoKey,
+  salt: Uint8Array,
+  keyUsage: ("encrypt" | "decrypt")[]
+) =>
   window.crypto.subtle.deriveKey(
     {
       name: "PBKDF2",
@@ -22,7 +26,10 @@ const deriveKey = (passwordKey: CryptoKey, salt: Uint8Array, keyUsage: ("encrypt
     keyUsage
   );
 
-export const encryptData = async (data: string, password: string): Promise<{ ciphertext: string; iv: string; salt: string }> => {
+export const encryptData = async (
+  data: string,
+  password: string
+): Promise<{ ciphertext: string; iv: string; salt: string }> => {
   const salt = window.crypto.getRandomValues(new Uint8Array(16));
   const iv = window.crypto.getRandomValues(new Uint8Array(12));
   const passwordKey = await getPasswordKey(password);
@@ -76,6 +83,65 @@ export const decryptData = async (
 
 export const generateId = () => {
   return Date.now().toString(36) + Math.random().toString(36).substring(2);
+};
+
+// Password Strength Checker
+export const evaluatePasswordStrength = (
+  password: string
+): { score: number; label: string; color: string; feedback: string[] } => {
+  let score = 0;
+  const feedback: string[] = [];
+
+  // Length checks
+  if (password.length >= 8) score += 1;
+  if (password.length >= 12) score += 1;
+  if (password.length >= 16) score += 1;
+
+  // Character variety checks
+  if (/[a-z]/.test(password)) score += 1;
+  if (/[A-Z]/.test(password)) score += 1;
+  if (/[0-9]/.test(password)) score += 1;
+  if (/[^a-zA-Z0-9]/.test(password)) score += 1;
+
+  // Generate feedback
+  if (password.length < 8) feedback.push("Use at least 8 characters");
+  if (!/[A-Z]/.test(password)) feedback.push("Add uppercase letters");
+  if (!/[0-9]/.test(password)) feedback.push("Add numbers");
+  if (!/[^a-zA-Z0-9]/.test(password))
+    feedback.push("Add special characters (!@#$%^&*)");
+
+  // Normalize score to 0-5
+  const normalizedScore = Math.min(Math.ceil(score / 1.4), 5);
+
+  const levels = [
+    { score: 0, label: "Very Weak", color: "bg-red-500" },
+    { score: 1, label: "Weak", color: "bg-orange-500" },
+    { score: 2, label: "Fair", color: "bg-yellow-500" },
+    { score: 3, label: "Good", color: "bg-blue-500" },
+    { score: 4, label: "Strong", color: "bg-green-500" },
+    { score: 5, label: "Very Strong", color: "bg-green-600" },
+  ];
+
+  const level = levels[normalizedScore];
+
+  return {
+    score: normalizedScore,
+    label: level.label,
+    color: level.color,
+    feedback,
+  };
+};
+
+// Validate JSON structure for import
+export const validateEncryptedExport = (data: unknown): boolean => {
+  if (typeof data !== "object" || data === null) return false;
+  const obj = data as Record<string, unknown>;
+  return (
+    typeof obj.data === "string" &&
+    typeof obj.iv === "string" &&
+    typeof obj.salt === "string" &&
+    typeof obj.version === "number"
+  );
 };
 
 // Helpers
