@@ -204,17 +204,18 @@ export default function App() {
           title: "Import Passwords",
           message: `Found ${importedPasswords.length} password(s). Add to current session?`,
           onConfirm: () => {
-            const currentIds = new Set(passwords.map((p) => p.id));
-            const toAdd = importedPasswords.filter(
-              (p) => !currentIds.has(p.id)
-            );
-            setPasswords((prev) => [...prev, ...toAdd]);
+            // Generate new IDs for imported passwords to avoid duplicates
+            const newPasswords = importedPasswords.map((p) => ({
+              ...p,
+              id: generateId(),
+            }));
+            setPasswords((prev) => [...prev, ...newPasswords]);
             setIsImportOpen(false);
             setImportStatus("");
             setFilePassword("");
             setImportFile(null);
             showNotification(
-              `✅ Successfully imported ${toAdd.length} new password(s).`
+              `✅ Successfully imported ${newPasswords.length} password(s).`
             );
             setConfirmDialog({
               show: false,
