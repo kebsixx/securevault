@@ -18,6 +18,7 @@ import {
   ExternalLink,
   AlertTriangle,
   FileKey,
+  HelpCircle,
 } from "lucide-react";
 
 export default function App() {
@@ -28,6 +29,7 @@ export default function App() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [isTutorialOpen, setIsTutorialOpen] = useState(false);
 
   // Add/Edit Form State
   const [formData, setFormData] = useState<Partial<PasswordEntry>>({});
@@ -204,6 +206,12 @@ export default function App() {
               className="p-2 text-gray-400 hover:text-red-600 transition-colors"
               title="Reset Session">
               <LogOut size={20} />
+            </button>
+            <button
+              onClick={() => setIsTutorialOpen(true)}
+              className="p-2 text-gray-400 hover:text-indigo-600 transition-colors"
+              title="Help & Tutorial">
+              <HelpCircle size={20} />
             </button>
           </div>
         </div>
@@ -534,6 +542,109 @@ export default function App() {
             className="w-full bg-indigo-600 text-white py-2.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium mt-2">
             Decrypt & Import
           </button>
+        </div>
+      </Modal>
+
+      {/* Tutorial Modal */}
+      <Modal
+        isOpen={isTutorialOpen}
+        onClose={() => setIsTutorialOpen(false)}
+        title="📚 Tutorial Penggunaan SecureVault">
+        <div className="space-y-6 max-h-96 overflow-y-auto">
+          <div>
+            <h3 className="font-bold text-indigo-600 mb-2">
+              ℹ️ Apa itu SecureVault?
+            </h3>
+            <p className="text-sm text-gray-700 leading-relaxed">
+              SecureVault adalah aplikasi vault kata sandi yang berjalan 100%
+              offline di browser Anda. Data hanya disimpan di memori tab
+              ini—jika Anda refresh atau tutup tab, semua data akan hilang.
+              Selalu ekspor data sebelum menutup!
+            </p>
+          </div>
+
+          <div>
+            <h3 className="font-bold text-indigo-600 mb-2">
+              ✅ Menambah Kata Sandi Baru
+            </h3>
+            <ol className="text-sm text-gray-700 space-y-1 list-decimal list-inside">
+              <li>
+                Klik tombol <strong>+ Add New</strong>
+              </li>
+              <li>
+                Isi <strong>Label</strong> (mis. Gmail, Bank)
+              </li>
+              <li>
+                Isi <strong>Username/Email</strong>
+              </li>
+              <li>
+                Masukkan <strong>Password</strong> atau klik{" "}
+                <strong>Generate</strong> untuk membuat otomatis
+              </li>
+              <li>
+                Klik <strong>Add to Session</strong>
+              </li>
+            </ol>
+          </div>
+
+          <div>
+            <h3 className="font-bold text-indigo-600 mb-2">
+              🔍 Mencari & Melihat Kata Sandi
+            </h3>
+            <ul className="text-sm text-gray-700 space-y-1">
+              <li>• Gunakan kotak pencarian untuk cari label atau username</li>
+              <li>• Klik ikon mata (👁) untuk tampilkan/sembunyikan password</li>
+              <li>• Klik ikon copy untuk salin ke clipboard</li>
+            </ul>
+          </div>
+
+          <div>
+            <h3 className="font-bold text-indigo-600 mb-2">
+              💾 Ekspor Data (SANGAT PENTING!)
+            </h3>
+            <ol className="text-sm text-gray-700 space-y-1 list-decimal list-inside">
+              <li>
+                Klik tombol <strong>Export</strong>
+              </li>
+              <li>
+                Masukkan kata sandi <strong>kuat</strong> untuk enkripsi file
+              </li>
+              <li>
+                Klik <strong>Encrypt & Download</strong>
+              </li>
+              <li>
+                Simpan file di tempat aman (folder Documents, cloud storage,
+                USB)
+              </li>
+            </ol>
+            <p className="text-xs text-red-600 mt-2 font-medium">
+              ⚠️ Jangan lupa password enkripsi Anda!
+            </p>
+          </div>
+
+          <div>
+            <h3 className="font-bold text-indigo-600 mb-2">
+              📥 Impor Data dari File Backup
+            </h3>
+            <ol className="text-sm text-gray-700 space-y-1 list-decimal list-inside">
+              <li>
+                Klik tombol <strong>Import</strong>
+              </li>
+              <li>Pilih file `.json` hasil ekspor sebelumnya</li>
+              <li>Masukkan kata sandi enkripsi file</li>
+              <li>
+                Klik <strong>Decrypt & Import</strong>
+              </li>
+            </ol>
+          </div>
+
+          <div className="bg-yellow-50 border border-yellow-200 p-3 rounded">
+            <p className="text-xs text-yellow-800 font-medium">
+              ⚠️ <strong>Tips Keamanan:</strong> Data hanya ada di tab ini.
+              Selalu backup sebelum menutup. Gunakan password ekspor yang kuat
+              dan simpan di tempat aman.
+            </p>
+          </div>
         </div>
       </Modal>
     </div>
