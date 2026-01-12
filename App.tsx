@@ -31,6 +31,19 @@ export default function App() {
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
 
+  // Confirm Dialog State
+  const [confirmDialog, setConfirmDialog] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    show: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+  });
+
   // Add/Edit Form State
   const [formData, setFormData] = useState<Partial<PasswordEntry>>({});
 
@@ -40,6 +53,13 @@ export default function App() {
   // Import State
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importStatus, setImportStatus] = useState("");
+
+  // Success Notification State
+  const [successNotif, setSuccessNotif] = useState<{
+    show: boolean;
+    message: string;
+    type: "success" | "error";
+  }>({ show: false, message: "", type: "success" });
 
   // UI State
   const [showPasswordMap, setShowPasswordMap] = useState<
@@ -83,9 +103,21 @@ export default function App() {
   };
 
   const handleDelete = (id: string) => {
-    if (window.confirm("Are you sure you want to delete this password?")) {
-      setPasswords((prev) => prev.filter((p) => p.id !== id));
-    }
+    setConfirmDialog({
+      show: true,
+      title: "Delete Password",
+      message:
+        "Are you sure you want to delete this password? This action cannot be undone.",
+      onConfirm: () => {
+        setPasswords((prev) => prev.filter((p) => p.id !== id));
+        setConfirmDialog({
+          show: false,
+          title: "",
+          message: "",
+          onConfirm: () => {},
+        });
+      },
+    });
   };
 
   const toggleShowPassword = (id: string) => {
@@ -96,10 +128,21 @@ export default function App() {
     navigator.clipboard.writeText(text);
   };
 
+  const showNotification = (
+    message: string,
+    type: "success" | "error" = "success"
+  ) => {
+    setSuccessNotif({ show: true, message, type });
+    setTimeout(
+      () => setSuccessNotif({ show: false, message: "", type: "success" }),
+      4000
+    );
+  };
+
   // --- EXPORT LOGIC ---
   const handleExport = async () => {
     if (!filePassword) {
-      alert("Please enter a password to encrypt the file.");
+      showNotification("Please enter a password to encrypt the file.", "error");
       return;
     }
 
@@ -129,7 +172,7 @@ export default function App() {
       setFilePassword("");
     } catch (e) {
       console.error("Export failed", e);
-      alert("Export encryption failed.");
+      showNotification("Export encryption failed.", "error");
     }
   };
 
@@ -156,20 +199,31 @@ export default function App() {
         );
         const importedPasswords: PasswordEntry[] = JSON.parse(decryptedJson);
 
-        if (
-          window.confirm(
-            `Found ${importedPasswords.length} passwords. Add to current session?`
-          )
-        ) {
-          const currentIds = new Set(passwords.map((p) => p.id));
-          const toAdd = importedPasswords.filter((p) => !currentIds.has(p.id));
-          setPasswords((prev) => [...prev, ...toAdd]);
-          setIsImportOpen(false);
-          setImportStatus("");
-          setFilePassword("");
-          setImportFile(null);
-          alert(`Successfully imported ${toAdd.length} new passwords.`);
-        }
+        setConfirmDialog({
+          show: true,
+          title: "Import Passwords",
+          message: `Found ${importedPasswords.length} password(s). Add to current session?`,
+          onConfirm: () => {
+            const currentIds = new Set(passwords.map((p) => p.id));
+            const toAdd = importedPasswords.filter(
+              (p) => !currentIds.has(p.id)
+            );
+            setPasswords((prev) => [...prev, ...toAdd]);
+            setIsImportOpen(false);
+            setImportStatus("");
+            setFilePassword("");
+            setImportFile(null);
+            showNotification(
+              `✅ Successfully imported ${toAdd.length} new password(s).`
+            );
+            setConfirmDialog({
+              show: false,
+              title: "",
+              message: "",
+              onConfirm: () => {},
+            });
+          },
+        });
       } catch (err) {
         console.error(err);
         setImportStatus("Incorrect password or invalid file format.");
@@ -186,6 +240,56 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Success/Error Notification Toast */}
+      {successNotif.show && (
+        <div
+          className={`fixed top-6 right-6 z-50 px-6 py-4 rounded-lg shadow-lg border-l-4 animate-in slide-in-from-right fade-in duration-300 max-w-sm ${
+            successNotif.type === "success"
+              ? "bg-green-50 border-green-500 text-green-800"
+              : "bg-red-50 border-red-500 text-red-800"
+          }`}>
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">
+              {successNotif.type === "success" ? "✅" : "❌"}
+            </span>
+            <p className="font-medium text-sm">{successNotif.message}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Confirm Dialog */}
+      {confirmDialog.show && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl transform transition-all scale-100 border border-gray-100 p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-3">
+              {confirmDialog.title}
+            </h2>
+            <p className="text-sm text-gray-600 mb-6 leading-relaxed">
+              {confirmDialog.message}
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() =>
+                  setConfirmDialog({
+                    show: false,
+                    title: "",
+                    message: "",
+                    onConfirm: () => {},
+                  })
+                }
+                className="flex-1 px-4 py-2.5 bg-gray-100 text-gray-900 rounded-lg hover:bg-gray-200 transition-colors font-medium">
+                Cancel
+              </button>
+              <button
+                onClick={confirmDialog.onConfirm}
+                className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium">
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Navbar */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
